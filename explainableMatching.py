@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from numpy.core.numeric import normalize_axis_tuple
 
 
 #
@@ -37,7 +38,7 @@ def getPreferenceLength():
 #
 
 # profile generator based on Impartial Culture Model
-def profileGenerator():
+def profileGenerator_IC():
   rng = np.random.default_rng()
   p = np.zeros((2*n, k), dtype=int)
   for i in range(2*n):
@@ -83,6 +84,25 @@ def profileGenerator_2dSquare():
 
   return p
 
+def rankingFromPoints_3dCube(myPoint, points):
+  global n, k
+  pointsWithIndexes = list(zip(points, list(range(n))))
+  return list(map(lambda x: x[1], sorted(pointsWithIndexes, key=lambda x: np.linalg.norm(myPoint - x[0]))))[:k]  
+
+def profileGenerator_3dCube():
+  global n, k
+  rng = np.random.default_rng()
+  p = np.zeros((2*n, k), dtype=int)
+
+  idealPoints_agents = 2 * rng.random((n, 3)) - 1
+  idealPoints_objects = 2 * rng.random((n, 3)) - 1
+  for i in range(n):
+    p[i] = rankingFromPoints_3dCube(idealPoints_agents[i], idealPoints_objects)  
+  for i in range(n):
+    p[n+i] = rankingFromPoints_3dCube(idealPoints_objects[i], idealPoints_agents)
+
+  return p
+
 
 # agent-proposing deferred acceptance algorithm
 def deferredAcceptance(p):
@@ -113,9 +133,79 @@ def deferredAcceptance(p):
 
   return (propose, accept)
 
+# boston mechanism
+def bostonMechanism(p):
+  p_m = np.append(p[:n, :], np.full((n, 1), n), axis=1)
+  p_w = np.append(p[n:, :], np.full((n, 1), n), axis=1)
+  propose = p_m.copy()[:, :1].T[0]
+  accept = p_w.copy()[:, k:].T[0]
+
+  while any(list(map(lambda x: (x != n) and (x != n+1), propose))):
+    for acc, w in zip(accept, range(n)):
+      if acc == n:
+        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(n))))))
+        proposeToW_acceptable = list(filter(lambda m: m in p_w[w], proposeToW))
+        if proposeToW_acceptable != []:
+          topM = min(proposeToW_acceptable, key=lambda m: np.where(p_w[w] == m))
+          rejectByM = [m for m in proposeToW if m != topM]
+          accept[w] = topM
+          propose[topM] = n+1
+          for m in rejectByM:
+            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+            propose[m] = nextPosition
+        else:
+          for m in proposeToW:
+            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+            propose[m] = nextPosition            
+      else:
+        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(n))))))
+        for m in proposeToW:
+          nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+          propose[m] = nextPosition            
+  return (propose, accept)
+
+
+def subBostonMechanism(p, i):
+  p_m = np.append(p[:i, :], np.full((i, 1), n), axis=1)
+  p_w = np.append(p[n:, :], np.full((n, 1), n), axis=1)
+  propose = p_m.copy()[:, :1].T[0]
+  accept = p_w.copy()[:, k:].T[0]
+
+  while any(list(map(lambda x: (x != n) and (x != n+1), propose))):
+    for acc, w in zip(accept, range(n)):
+      if acc == n:
+        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(i))))))
+        proposeToW_acceptable = list(filter(lambda m: m in p_w[w], proposeToW))
+        if proposeToW_acceptable != []:
+          topM = min(proposeToW_acceptable, key=lambda m: np.where(p_w[w] == m))
+          rejectByM = [m for m in proposeToW if m != topM]
+          accept[w] = topM
+          propose[topM] = n+1
+          for m in rejectByM:
+            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+            propose[m] = nextPosition
+        else:
+          for m in proposeToW:
+            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+            propose[m] = nextPosition            
+      else:
+        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(i))))))
+        for m in proposeToW:
+          nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
+          propose[m] = nextPosition            
+  return (propose, accept)
+
+
+def acceptToMensRank(p, accept):
+  mensRanks = np.full(n, k)
+  for m, w in zip(accept, range(n)):
+    if m != n:
+      mensRanks[m] = np.where(p[m] == w)[0][0]
+  return mensRanks
+
 
 # generate a profile p from the uniform distribution and calculate tl(p)
-def experiment():
+def subExperimentForDA(profileGenerator):
   p = profileGenerator()
   _, m = deferredAcceptance(p)
   tl_p = 0
@@ -129,43 +219,22 @@ def experiment():
   return (tl_p, (tl_p / numberOfMatch))
 
 
-def experiment_average():
+def subExperimentForBoston(profileGenerator):
   p = profileGenerator()
-  _, m = deferredAcceptance(p)
-  tl_p = 0
-  for i, a in zip(m, range(n)):
-    if i != n:
-      tl_i = k - (np.where(p[i] == a)[0][0] + 1)
-      tl_a = k - (np.where(p[a+n] == i)[0][0] + 1)
-      tl_p = tl_p + tl_i + tl_a
-  return tl_p / (2*n)
-
-def experiment_1dEuclideanModels():
-  p = profileGenerator_1dInterval()
-  _, m = deferredAcceptance(p)
-  tl_p = 0
-  numberOfMatch = 0
-  for i, a in zip(m, range(n)):
-    if i != n:
-      numberOfMatch += 2
-      tl_i = k - (np.where(p[i] == a)[0][0] + 1)
-      tl_a = k - (np.where(p[a+n] == i)[0][0] + 1)
-      tl_p = tl_p + tl_i + tl_a
-  return (tl_p, (tl_p / numberOfMatch))
-
-def experiment_2dEuclideanModels():
-  p = profileGenerator_2dSquare()
-  _, m = deferredAcceptance(p)
-  tl_p = 0
-  numberOfMatch = 0
-  for i, a in zip(m, range(n)):
-    if i != n:
-      numberOfMatch += 2
-      tl_i = k - (np.where(p[i] == a)[0][0] + 1)
-      tl_a = k - (np.where(p[a+n] == i)[0][0] + 1)
-      tl_p = tl_p + tl_i + tl_a
-  return (tl_p, (tl_p / numberOfMatch))
-
+  _, preResult = subBostonMechanism(p, 1)
+  preRanks = acceptToMensRank(p, preResult)
+  numOfStep = 0
+  for i in range(2, n+1):
+    _, nowResult = subBostonMechanism(p, i)
+    nowRanks = acceptToMensRank(p, nowResult)
+    accpetableWomen = list(filter(lambda w: (i-1) in p[n+w], p[i-1]))
+    if accpetableWomen != []:
+      preRanks[i-1] = np.where(p[i-1] == accpetableWomen[0])[0][0]
+    print('preRanks:', preRanks)
+    print('nowRanks:', nowRanks)
+    numOfStep += sum(nowRanks - preRanks)
+    preRanks = nowRanks
+  return numOfStep
 
 
 #
@@ -177,80 +246,60 @@ repeat = 10
 
 preferenceLengths = [10, 15, 20] #, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]
 marketSizes = [10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500] #, 600, 700, 800, 900, 1000]
-results_IC = []
-results_tlAverages_IC = []
-results_1D = []
-results_tlAverages_1D = []
-results_2D = []
-results_tlAverages_2D = []
 
 
-for pl in preferenceLengths:
-  averages_IC = []
-  tlAverages_IC = []
-  averages_1D = []
-  tlAverages_1D = []  
-  averages_2D = []
-  tlAverages_2D = []
+def mainExperimentForDA(profileGenerator):
+  global n, k, repeat, preferenceLengths, marketSizes
+  results = []
+  results_tlAverages = []
 
-  setPreferenceLength(pl)
-  relativeMarketSizes = marketSizes[marketSizes.index(pl):]
-  for mk in relativeMarketSizes:
-    setMarketSize(mk)
-    average_IC = 0
-    tlAverage_IC = 0
-    average_1D = 0
-    tlAverage_1D = 0    
-    average_2D = 0
-    tlAverage_2D = 0
-    for _ in range(repeat):
-      av_IC, tlav_IC = experiment()
-      average_IC += av_IC
-      tlAverage_IC += tlav_IC
-      av_1D, tlav_1D = experiment_1dEuclideanModels()
-      average_1D += av_1D
-      tlAverage_1D += tlav_1D      
-      av_2D, tlav_2D = experiment_2dEuclideanModels()
-      average_2D += av_2D
-      tlAverage_2D += tlav_2D
-    average_IC = average_IC / repeat
-    average_1D = average_1D / repeat
-    average_2D = average_2D / repeat
+  for pl in preferenceLengths:
+    averages = []
+    tlAverages = []
+    
+    setPreferenceLength(pl)
+    relativeMarketSizes = marketSizes[marketSizes.index(pl):]
+    for mk in relativeMarketSizes:
+      setMarketSize(mk)
+      average = 0
+      tlAverage = 0
+      for _ in range(repeat):
+        av, tlAv = subExperimentForDA(profileGenerator)
+        average += av
+        tlAverage += tlAv
+      average = average / repeat
+      tlAverage = tlAverage / repeat
+      averages.append(average)
+      tlAverages.append(tlAverage)
+      print('prefelence length:' + str(pl) + ', market size:' + str(mk) + ' is finished!')
+    results.append((relativeMarketSizes, averages))
+    results_tlAverages.append((relativeMarketSizes, tlAverages))
+  return (results, results_tlAverages)
 
-    averages_IC.append(average_IC)
-    averages_1D.append(average_1D)
-    averages_2D.append(average_2D)
 
-    tlAverage_IC = tlAverage_IC / repeat
-#    tlAverages_IC.append(tlAverage)
-    print('pl:' + str(pl) + ', mk:' + str(mk) + ' is finished!')
-  results_IC.append((relativeMarketSizes, averages_IC))
-  results_1D.append((relativeMarketSizes, averages_1D))
-  results_2D.append((relativeMarketSizes, averages_2D))
+def singlePlot(results, labelForResults, yLabel):
+  global preferenceLengths
+  fig, ax = plt.subplots()
+  for i in range(len(results)):
+    ax.plot(results[i][0], results[i][1], label=labelForResults + ', k = ' + str(preferenceLengths[i]))
+  ax.set_xlabel('n (market size)')
+  ax.set_ylabel(yLabel)
+  ax.legend()
+  plt.show()
 
-#  results_tlAverages.append((relativeMarketSizes, tlAverages))
 
-#print(results_tlAverages)
-
-fig, ax = plt.subplots()
-for i in range(len(results_IC)):
-  ax.plot(results_IC[i][0], results_IC[i][1], label='IC Model, k = ' + str(preferenceLengths[i]))
-for i in range(len(results_1D)):
-  ax.plot(results_1D[i][0], results_1D[i][1], label='Euclidean 1D Model, k = ' + str(preferenceLengths[i]))
-for i in range(len(results_2D)):
-  ax.plot(results_2D[i][0], results_2D[i][1], label='Euclidean 2D Model, k = ' + str(preferenceLengths[i]))
-
-ax.set_xlabel('n (market size)')
-ax.set_ylabel('tl(p)')
-ax.legend()
-plt.show()
-
-'''
-fig, ax = plt.subplots()
-for i in range(len(results_tlAverages)):
-  ax.plot(results_tlAverages[i][0], results_tlAverages[i][1], label='k = ' + str(preferenceLengths[i]))
-ax.set_xlabel('n (market size)')
-ax.set_ylabel('average of tl_i(p)/tl_a(p)')
-ax.legend()
-plt.show()
-'''
+def allPlot(results1, results2, results3, results4, label1, label2, label3, label4, yLabel):
+  global preferenceLengths
+  fig, ax = plt.subplots()
+  for i in range(len(results1)):
+    ax.plot(results1[i][0], results1[i][1], label=label1 + ', k = ' + str(preferenceLengths[i]))
+  for i in range(len(results2)):
+    ax.plot(results2[i][0], results2[i][1], label=label2 + ', k = ' + str(preferenceLengths[i]))
+  for i in range(len(results2)):
+    ax.plot(results3[i][0], results3[i][1], label=label3 + ', k = ' + str(preferenceLengths[i]))
+  for i in range(len(results2)):
+    ax.plot(results4[i][0], results4[i][1], label=label4 + ', k = ' + str(preferenceLengths[i]))
+  ax.set_xlabel('n (market size)')
+  ax.set_ylabel(yLabel)
+  ax.legend()
+  plt.show()
