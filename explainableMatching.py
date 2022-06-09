@@ -104,7 +104,7 @@ def profileGenerator_3dCube():
   return p
 
 
-# agent-proposing deferred acceptance algorithm
+# man-proposing deferred acceptance algorithm
 def deferredAcceptance(p):
   p_a = np.append(p[:n, :], np.full((n, 1), n), axis=1)
   p_o = np.append(p[n:, :], np.full((n, 1), n), axis=1)
@@ -133,76 +133,6 @@ def deferredAcceptance(p):
 
   return (propose, accept)
 
-# boston mechanism
-def bostonMechanism(p):
-  p_m = np.append(p[:n, :], np.full((n, 1), n), axis=1)
-  p_w = np.append(p[n:, :], np.full((n, 1), n), axis=1)
-  propose = p_m.copy()[:, :1].T[0]
-  accept = p_w.copy()[:, k:].T[0]
-
-  while any(list(map(lambda x: (x != n) and (x != n+1), propose))):
-    for acc, w in zip(accept, range(n)):
-      if acc == n:
-        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(n))))))
-        proposeToW_acceptable = list(filter(lambda m: m in p_w[w], proposeToW))
-        if proposeToW_acceptable != []:
-          topM = min(proposeToW_acceptable, key=lambda m: np.where(p_w[w] == m))
-          rejectByM = [m for m in proposeToW if m != topM]
-          accept[w] = topM
-          propose[topM] = n+1
-          for m in rejectByM:
-            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-            propose[m] = nextPosition
-        else:
-          for m in proposeToW:
-            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-            propose[m] = nextPosition            
-      else:
-        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(n))))))
-        for m in proposeToW:
-          nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-          propose[m] = nextPosition            
-  return (propose, accept)
-
-
-def subBostonMechanism(p, i):
-  p_m = np.append(p[:i, :], np.full((i, 1), n), axis=1)
-  p_w = np.append(p[n:, :], np.full((n, 1), n), axis=1)
-  propose = p_m.copy()[:, :1].T[0]
-  accept = p_w.copy()[:, k:].T[0]
-
-  while any(list(map(lambda x: (x != n) and (x != n+1), propose))):
-    for acc, w in zip(accept, range(n)):
-      if acc == n:
-        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(i))))))
-        proposeToW_acceptable = list(filter(lambda m: m in p_w[w], proposeToW))
-        if proposeToW_acceptable != []:
-          topM = min(proposeToW_acceptable, key=lambda m: np.where(p_w[w] == m))
-          rejectByM = [m for m in proposeToW if m != topM]
-          accept[w] = topM
-          propose[topM] = n+1
-          for m in rejectByM:
-            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-            propose[m] = nextPosition
-        else:
-          for m in proposeToW:
-            nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-            propose[m] = nextPosition            
-      else:
-        proposeToW = list(map(lambda p_m: p_m[1], filter(lambda p_m: p_m[0] == w, list(zip(propose, range(i))))))
-        for m in proposeToW:
-          nextPosition = p_m[m][np.where(p_m[m] == propose[m])[0][0] + 1]
-          propose[m] = nextPosition            
-  return (propose, accept)
-
-
-def acceptToMensRank(p, accept):
-  mensRanks = np.full(n, k)
-  for m, w in zip(accept, range(n)):
-    if m != n:
-      mensRanks[m] = np.where(p[m] == w)[0][0]
-  return mensRanks
-
 
 # generate a profile p from the uniform distribution and calculate tl(p)
 def subExperimentForDA(profileGenerator):
@@ -219,23 +149,6 @@ def subExperimentForDA(profileGenerator):
   return (tl_p, (tl_p / numberOfMatch))
 
 
-def subExperimentForBoston(profileGenerator):
-  p = profileGenerator()
-  _, preResult = subBostonMechanism(p, 1)
-  preRanks = acceptToMensRank(p, preResult)
-  numOfStep = 0
-  for i in range(2, n+1):
-    _, nowResult = subBostonMechanism(p, i)
-    nowRanks = acceptToMensRank(p, nowResult)
-    accpetableWomen = list(filter(lambda w: (i-1) in p[n+w], p[i-1]))
-    if accpetableWomen != []:
-      preRanks[i-1] = np.where(p[i-1] == accpetableWomen[0])[0][0]
-    print('preRanks:', preRanks)
-    print('nowRanks:', nowRanks)
-    numOfStep += sum(nowRanks - preRanks)
-    preRanks = nowRanks
-  return numOfStep
-
 
 #
 # Experiment
@@ -245,7 +158,7 @@ def subExperimentForBoston(profileGenerator):
 repeat = 10
 
 preferenceLengths = [10, 15, 20] #, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]
-marketSizes = [10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500] #, 600, 700, 800, 900, 1000]
+marketSizes = [10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
 
 def mainExperimentForDA(profileGenerator):
