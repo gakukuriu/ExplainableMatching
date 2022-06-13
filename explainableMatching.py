@@ -155,7 +155,7 @@ def subExperimentForDA(profileGenerator):
 #
 
 # times to run the experiment to get an average
-repeat = 10
+repeat = 100
 
 preferenceLengths = [10, 15, 20] #, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]
 marketSizes = [10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
